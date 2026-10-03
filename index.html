@@ -115,8 +115,11 @@
         <div class="bg-white rounded-2xl shadow-sm p-4">
           <h3 class="font-medium mb-3"><i class="fa-solid fa-user-graduate text-blue-600 mr-2"></i>นักเรียน</h3>
           <form onsubmit="event.preventDefault();addStudent()" class="grid grid-cols-6 gap-2 mb-3">
-            <input id="sId" placeholder="รหัส" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
-            <input id="sName" placeholder="ชื่อ-สกุล" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="sId" placeholder="รหัสนักเรียน (studentId)" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="sNumber" type="number" min="1" placeholder="เลขที่" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+            <input id="sPrefix" placeholder="คำนำหน้า" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+            <input id="sFirst" placeholder="ชื่อ" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="sLast" placeholder="นามสกุล" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm">
             <input id="sClass" placeholder="ห้อง เช่น ม.1/1" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
             <button class="col-span-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><i class="fa-solid fa-plus"></i> เพิ่ม</button>
           </form>
@@ -156,14 +159,14 @@
         </div>
         <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3 lg:col-span-2">
           <h3 class="font-medium"><i class="fa-solid fa-table text-blue-600 mr-2"></i>นำเข้านักเรียนจาก Google Sheets</h3>
-          <p class="text-xs text-slate-500">ชีตต้องตั้งแชร์เป็น "ทุกคนที่มีลิงก์ (Anyone with the link) - ผู้ดู" และมีหัวตาราง เช่น <b>รหัส | ชื่อ-สกุล | ห้อง</b> ถ้าไม่พบชื่อหัวตาราง ระบบจะใช้ 3 คอลัมน์แรกตามลำดับ</p>
+          <p class="text-xs text-slate-500">ชีตต้องตั้งแชร์เป็น "ทุกคนที่มีลิงก์ (Anyone with the link) - ผู้ดู" และแถวแรกเป็นหัวคอลัมน์: <b>studentId | prefix | firstName | lastName | className | number</b> ถ้าไม่พบหัวคอลัมน์ ระบบจะใช้ 6 คอลัมน์แรกตามลำดับนี้</p>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <input id="gsUrl" placeholder="วางลิงก์ Google Sheets" class="sm:col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm">
             <input id="gsSheet" placeholder="ชื่อแท็บ (เว้นว่าง = ตาม gid หรือแท็บแรก)" class="px-3 py-2 rounded-lg border border-slate-200 text-sm">
           </div>
           <button onclick="loadGsheet()" class="px-4 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200"><i class="fa-solid fa-cloud-arrow-down mr-1"></i>ดึงข้อมูลจากชีต</button>
           <p id="gsInfo" class="text-xs text-slate-500"></p>
-          <textarea id="csvBox" rows="6" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="ตรวจสอบรายการที่ดึงมา (หรือวางเองก็ได้): รหัส,ชื่อ-สกุล,ห้อง"></textarea>
+          <textarea id="csvBox" rows="6" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-mono" placeholder="ตรวจสอบรายการที่ดึงมา (หรือวางเองก็ได้ คั่นด้วยแท็บหรือคอมมา): studentId, prefix, firstName, lastName, className, number"></textarea>
           <button onclick="importCsv()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"><i class="fa-solid fa-file-import mr-1"></i>นำเข้าสู่ระบบ</button>
         </div>
         <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
@@ -190,13 +193,14 @@ const MENUS=[
  {id:'settings',icon:'fa-gear',label:'ตั้งค่า',roles:['admin']}
 ];
 const conn=LS.get('conn',{url:DEFAULT_URL,key:DEFAULT_KEY});
-const state={role:sessionStorage.getItem('role'),pw:sessionStorage.getItem('pw')||'',students:LS.get('students',[]),teachers:LS.get('teachers',[]),att:{},draft:{}};
+const state={role:sessionStorage.getItem('role'),pw:sessionStorage.getItem('pw')||'',students:LS.get('students2',[]),teachers:LS.get('teachers',[]),att:{},draft:{}};
 let sb=null,pie=null,online=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
 const key=(d,c,id)=>`${d}|${c}|${id}`;
-const classes=()=>[...new Set(state.students.map(s=>s.classroom))].sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
+const fullName=s=>[(s.prefix||'')+(s.firstName||''),s.lastName||''].filter(Boolean).join(' ');
+const classes=()=>[...new Set(state.students.map(s=>s.className))].sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
 const showLoader=t=>{$('loaderText').textContent=t||'กำลังโหลด...';$('loader').classList.remove('hidden')};
 const hideLoader=()=>$('loader').classList.add('hidden');
 const toast=(icon,title)=>Swal.fire({toast:true,position:'top',icon,title,showConfirmButton:false,timer:2200});
@@ -255,9 +259,9 @@ function updateConn(){$('connStatus').innerHTML=online?'<span class="text-green-
 async function loadMaster(manual){
  showLoader('กำลังโหลดข้อมูล...');
  try{
-  const [s,t]=await Promise.all([sb.from('students').select('*').order('classroom').order('id'),sb.from('teachers').select('*').order('name')]);
+  const [s,t]=await Promise.all([sb.from('students').select('*').order('className').order('number',{nullsFirst:false}).order('studentId'),sb.from('teachers').select('*').order('name')]);
   state.students=chk(s);state.teachers=chk(t);
-  LS.set('students',state.students);LS.set('teachers',state.teachers);online=true;
+  LS.set('students2',state.students);LS.set('teachers',state.teachers);online=true;
   if(manual)toast('success','รีเฟรชข้อมูลแล้ว');
  }catch(e){online=false;toast('warning','เชื่อมต่อฐานข้อมูลไม่ได้ ใช้ข้อมูลที่แคชไว้')}
  finally{hideLoader()}
@@ -282,21 +286,21 @@ async function renderAttendance(){
  const d=$('attDate').value,c=$('attClass').value;
  if(!d)return;
  if(online){showLoader('กำลังโหลดผลเช็คชื่อ...');await loadAtt(d);hideLoader()}
- const list=state.students.filter(s=>s.classroom===c);
+ const list=state.students.filter(s=>s.className===c);
  state.draft={};
- list.forEach(s=>{state.draft[s.id]=state.att[key(d,c,s.id)]||'present'});
+ list.forEach(s=>{state.draft[s.studentId]=state.att[key(d,c,s.studentId)]||'present'});
  if(!list.length){$('attList').innerHTML='<p class="text-slate-400 text-center py-10 col-span-full">ยังไม่มีนักเรียนในห้องนี้ (Admin เพิ่มได้ที่เมนูจัดการ)</p>';return}
  $('attList').innerHTML=list.map((s,i)=>`
  <div class="bg-white rounded-2xl shadow-sm p-3">
   <div class="flex items-center gap-3 mb-2">
-   <div class="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-medium">${i+1}</div>
-   <div class="min-w-0"><p class="font-medium truncate">${esc(s.name)}</p><p class="text-xs text-slate-400">รหัส ${esc(s.id)}</p></div>
+   <div class="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-medium">${esc(s.number??(i+1))}</div>
+   <div class="min-w-0"><p class="font-medium truncate">${esc(fullName(s))}</p><p class="text-xs text-slate-400">รหัส ${esc(s.studentId)}</p></div>
   </div>
-  <div class="grid grid-cols-4 gap-2" data-sid="${esc(s.id)}">
-   ${Object.entries(STATUS).map(([k,v])=>`<button onclick="setStatus('${esc(s.id)}','${k}')" data-k="${k}" class="st-btn py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600">${v.label}</button>`).join('')}
+  <div class="grid grid-cols-4 gap-2" data-sid="${esc(s.studentId)}">
+   ${Object.entries(STATUS).map(([k,v])=>`<button onclick="setStatus('${esc(s.studentId)}','${k}')" data-k="${k}" class="st-btn py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600">${v.label}</button>`).join('')}
   </div>
  </div>`).join('');
- list.forEach(s=>paintStatus(s.id));
+ list.forEach(s=>paintStatus(s.studentId));
 }
 function paintStatus(id){
  const box=document.querySelector(`[data-sid="${CSS.escape(id)}"]`);if(!box)return;
@@ -310,7 +314,7 @@ function markAll(k){Object.keys(state.draft).forEach(id=>{state.draft[id]=k;pain
 async function saveAttendance(){
  const d=$('attDate').value,c=$('attClass').value,ids=Object.keys(state.draft);
  if(!ids.length)return toast('warning','ไม่มีรายชื่อให้บันทึก');
- const rows=ids.map(id=>({date:d,classroom:c,student_id:id,name:(state.students.find(s=>s.id===id)||{}).name,status:state.draft[id]}));
+ const rows=ids.map(id=>{const s=state.students.find(x=>x.studentId===id)||{};return{date:d,classroom:c,student_id:id,name:fullName(s),status:state.draft[id]}});
  const r=await run('กำลังบันทึกไปยัง Supabase...',async()=>chk(await sb.from('attendance').upsert(rows,{onConflict:'date,classroom,student_id'})),'บันทึกเรียบร้อย');
  if(r!==undefined||online)ids.forEach(id=>state.att[key(d,c,id)]=state.draft[id]);
 }
@@ -320,9 +324,9 @@ async function renderDashboard(){
  if(online){showLoader('กำลังโหลดสถิติ...');await loadAtt(d);hideLoader()}
  const tot={present:0,absent:0,late:0,leave:0,none:0};
  const rows=classes().map(c=>{
-  const list=state.students.filter(s=>s.classroom===c);
+  const list=state.students.filter(s=>s.className===c);
   const r={present:0,absent:0,late:0,leave:0,none:0};
-  list.forEach(s=>{r[state.att[key(d,c,s.id)]||'none']++});
+  list.forEach(s=>{r[state.att[key(d,c,s.studentId)]||'none']++});
   Object.keys(r).forEach(k=>tot[k]+=r[k]);
   const checked=list.length-r.none,pct=checked?Math.round((r.present+r.late)*100/checked):0;
   return `<tr class="border-b last:border-0"><td class="text-left py-2 font-medium">${esc(c)}</td><td>${list.length}</td><td>${r.present}</td><td>${r.absent}</td><td>${r.late}</td><td>${r.leave}</td><td><span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">${checked?pct+'%':'-'}</span></td></tr>`;
@@ -334,14 +338,15 @@ async function renderDashboard(){
 }
 
 function renderManage(){
- $('studentList').innerHTML=state.students.map(s=>`<div class="flex items-center justify-between py-2 text-sm"><div class="min-w-0"><p class="truncate">${esc(s.name)}</p><p class="text-xs text-slate-400">${esc(s.id)} · ${esc(s.classroom)}</p></div><button onclick="delStudent('${esc(s.id)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
+ $('studentList').innerHTML=state.students.map(s=>`<div class="flex items-center justify-between py-2 text-sm"><div class="min-w-0"><p class="truncate">${esc(fullName(s))}</p><p class="text-xs text-slate-400">${esc(s.studentId)} · ${esc(s.className)}${s.number!=null?' · เลขที่ '+esc(s.number):''}</p></div><button onclick="delStudent('${esc(s.studentId)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
  $('teacherList').innerHTML=state.teachers.map(t=>`<div class="flex items-center justify-between py-2 text-sm"><div><p>${esc(t.name)}</p><p class="text-xs text-slate-400">ที่ปรึกษา ${esc(t.classroom||'-')}</p></div><button onclick="delTeacher('${esc(t.id)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
 }
 const confirmDel=async txt=>(await Swal.fire({icon:'warning',title:'ยืนยันการลบ?',text:txt,showCancelButton:true,confirmButtonColor:'#dc2626',confirmButtonText:'ลบ',cancelButtonText:'ยกเลิก'})).isConfirmed;
 async function addStudent(){
- const id=$('sId').value.trim(),name=$('sName').value.trim(),classroom=$('sClass').value.trim();
- const r=await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_student',{pw:state.pw,p_id:id,p_name:name,p_classroom:classroom})),'เพิ่มนักเรียนแล้ว');
- if(r!==undefined||true){['sId','sName'].forEach(i=>$(i).value='');await loadMaster()}
+ const n=$('sNumber').value.trim();
+ const args={pw:state.pw,p_student_id:$('sId').value.trim(),p_prefix:$('sPrefix').value.trim(),p_first:$('sFirst').value.trim(),p_last:$('sLast').value.trim(),p_class:$('sClass').value.trim(),p_number:n?parseInt(n,10):null};
+ const r=await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_student',args)),'บันทึกนักเรียนแล้ว');
+ if(r!==undefined||true){['sId','sNumber','sPrefix','sFirst','sLast'].forEach(i=>$(i).value='');await loadMaster()}
 }
 async function addTeacher(){
  const name=$('tName').value.trim(),cls=$('tClass').value.trim();
@@ -349,7 +354,7 @@ async function addTeacher(){
  $('tName').value='';$('tClass').value='';await loadMaster();
 }
 async function delStudent(id){
- const s=state.students.find(x=>x.id===id);if(!s||!await confirmDel(s.name+' (และประวัติเช็คชื่อ)'))return;
+ const s=state.students.find(x=>x.studentId===id);if(!s||!await confirmDel(fullName(s)+' (และประวัติเช็คชื่อ)'))return;
  await run('กำลังลบ...',async()=>chk(await sb.rpc('admin_delete_student',{pw:state.pw,p_id:id})),'ลบแล้ว');await loadMaster();
 }
 async function delTeacher(id){
@@ -368,8 +373,8 @@ async function changePw(){
  if(r!==undefined||true){state.pw=n;sessionStorage.setItem('pw',n);$('newPw').value=''}
 }
 async function importCsv(){
- const rows=$('csvBox').value.split(/\r?\n/).map(l=>l.split(/[,\t]/).map(x=>x.trim())).filter(a=>a.length>=3&&a[0]&&a[1]&&a[2]&&!['id','รหัส'].includes(a[0].toLowerCase())).map(a=>({id:a[0],name:a[1],classroom:a[2]}));
- if(!rows.length)return fail('ไม่พบข้อมูลที่นำเข้าได้','รูปแบบ: รหัส,ชื่อ-สกุล,ห้อง');
+ const rows=$('csvBox').value.split(/\r?\n/).map(l=>l.split(/[,\t]/).map(x=>x.trim())).filter(a=>a.length>=5&&a[0]&&a[2]&&a[4]&&!['studentid','รหัส'].includes(a[0].toLowerCase())).map(a=>({studentId:a[0],prefix:a[1]||'',firstName:a[2],lastName:a[3]||'',className:a[4],number:a[5]||''}));
+ if(!rows.length)return fail('ไม่พบข้อมูลที่นำเข้าได้','รูปแบบ: studentId, prefix, firstName, lastName, className, number');
  const n=await run(`กำลังนำเข้า ${rows.length} รายการ...`,async()=>chk(await sb.rpc('admin_import_students',{pw:state.pw,rows})),`นำเข้าแล้ว ${rows.length} รายการ`);
  if(n!==undefined){$('csvBox').value='';await loadMaster()}
 }
@@ -400,13 +405,14 @@ async function loadGsheet(){
  if(text.trim().startsWith('<')) return fail('เข้าถึงชีตไม่ได้','ตั้งค่าแชร์เป็น "ทุกคนที่มีลิงก์ - ผู้ดู" แล้วลองใหม่');
  const rows=parseCsv(text).map(r=>r.map(c=>c.trim())).filter(r=>r.some(Boolean));
  if(!rows.length) return fail('ชีตว่างเปล่า');
- const head=rows[0].map(h=>h.toLowerCase());
- const find=(...keys)=>head.findIndex(h=>keys.some(k=>h.includes(k)));
- let iId=find('รหัส','id','เลขประจำตัว'), iName=find('ชื่อ','name'), iCls=find('ห้อง','class','ชั้น');
- let data=rows;
- if(iId>=0&&iName>=0&&iCls>=0) data=rows.slice(1); else { iId=0;iName=1;iCls=2 }
- const clean=data.filter(r=>r[iId]&&r[iName]&&r[iCls]);
- $('csvBox').value=clean.map(r=>[r[iId],r[iName],r[iCls]].join('\t')).join('\n');
+ const head=rows[0].map(h=>h.toLowerCase().replace(/\s+/g,''));
+ const idx=(...names)=>head.findIndex(h=>names.includes(h));
+ const ix=[idx('studentid','รหัส','รหัสนักเรียน','เลขประจำตัว'),idx('prefix','คำนำหน้า'),idx('firstname','ชื่อ'),idx('lastname','นามสกุล'),idx('classname','ห้อง','ชั้น','ห้องเรียน'),idx('number','เลขที่')];
+ let data=rows, map=[0,1,2,3,4,5];
+ if(ix[0]>=0&&ix[2]>=0&&ix[4]>=0){ data=rows.slice(1); map=ix }
+ const get=(r,k)=>map[k]>=0?(r[map[k]]||''):'';
+ const clean=data.filter(r=>get(r,0)&&get(r,2)&&get(r,4));
+ $('csvBox').value=clean.map(r=>[0,1,2,3,4,5].map(k=>get(r,k)).join('\t')).join('\n');
  $('gsInfo').innerHTML=`<span class="text-green-600"><i class="fa-solid fa-circle-check"></i> ดึงข้อมูลได้ ${clean.length} รายการ ตรวจสอบแล้วกด "นำเข้าสู่ระบบ"</span>`;
 }
 async function exportCsv(){
