@@ -20,6 +20,17 @@
  .st-btn.active-leave{background:#2563eb;color:#fff;border-color:#2563eb}
  .page{display:none}.page.show{display:block}
  .swal2-input{margin:.25rem 0 .5rem!important;width:100%!important;box-sizing:border-box}
+ #printArea{display:none}
+ .rpt table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+ .rpt th,.rpt td{border:1px solid #666;padding:4px 6px}
+ .rpt th{background:#eee}
+ .rpt .c{text-align:center}
+ @media print{
+  #appView,#loginView,#loader,.swal2-container{display:none!important}
+  #printArea{display:block!important}
+  body{background:#fff!important}
+  @page{size:A4;margin:14mm}
+ }
 </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
@@ -82,10 +93,11 @@
           <button onclick="markAll('present')" class="flex-1 py-2 rounded-lg bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100">มาทั้งหมด</button>
           <button onclick="markAll('absent')" class="flex-1 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100">ขาดทั้งหมด</button>
         </div>
-        <div class="sm:col-span-3 relative">
+        <div class="sm:col-span-2 relative">
           <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
           <input id="attSearch" oninput="drawAtt()" placeholder="ค้นหาในห้องนี้ (ชื่อ / รหัส / เลขที่)" class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm">
         </div>
+        <button onclick="printClass()" class="py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"><i class="fa-solid fa-print mr-1"></i>พิมพ์รายงานห้องนี้</button>
       </div>
       <div id="attList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
       <div class="sticky bottom-20 md:bottom-4 mt-4">
@@ -94,9 +106,12 @@
     </section>
 
     <section id="page-dashboard" class="page">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center justify-between gap-2 mb-4">
         <h2 class="text-xl font-semibold"><i class="fa-solid fa-chart-pie text-blue-600 mr-2"></i>สถิติการมาเรียน</h2>
-        <input id="dashDate" type="date" onchange="renderDashboard()" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm">
+        <div class="flex items-center gap-2">
+          <button onclick="printReport()" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"><i class="fa-solid fa-print mr-1"></i>พิมพ์รายงาน</button>
+          <input id="dashDate" type="date" onchange="renderDashboard()" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm">
+        </div>
       </div>
       <div id="dashCards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
       <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -191,6 +206,8 @@
   <nav id="bottomNav" class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex justify-around py-1 shadow-[0_-4px_12px_rgba(0,0,0,.04)]"></nav>
 </div>
 
+<div id="printArea"></div>
+
 <script>
 const DEFAULT_URL='https://uclowwjwhihmephyniaq.supabase.co';
 const DEFAULT_KEY='sb_publishable_wWiGYCd_sJlWwDDoerua9A_wiXlEP6U';
@@ -209,6 +226,7 @@ let sb=null,pie=null,online=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const thDate=d=>new Date(d+'T00:00:00').toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'});
 const key=(d,c,id)=>`${d}|${c}|${id}`;
 const fullName=s=>[(s.prefix||'')+(s.firstName||''),s.lastName||''].filter(Boolean).join(' ');
 const matchStudent=(s,q)=>[fullName(s),s.studentId,s.className,s.number].join(' ').toLowerCase().includes(q);
@@ -353,6 +371,59 @@ async function renderDashboard(){
  $('dashCards').innerHTML=Object.entries(STATUS).map(([k,v])=>`<div class="bg-white rounded-2xl shadow-sm p-4"><p class="text-xs text-slate-500">${v.label}</p><p class="text-3xl font-semibold" style="color:${v.color}">${tot[k]}</p></div>`).join('');
  if(pie)pie.destroy();
  pie=new Chart($('pieChart'),{type:'doughnut',data:{labels:Object.values(STATUS).map(v=>v.label),datasets:[{data:[tot.present,tot.absent,tot.late,tot.leave],backgroundColor:Object.values(STATUS).map(v=>v.color),borderWidth:2}]},options:{plugins:{legend:{position:'bottom'}},cutout:'60%'}});
+}
+
+function reportHtml(date,scope){
+ const lab=k=>STATUS[k]?STATUS[k].label:'-';
+ const stat=c=>{
+  const list=state.students.filter(s=>s.className===c);
+  const r={present:0,absent:0,late:0,leave:0,none:0};
+  list.forEach(s=>{r[state.att[key(date,c,s.studentId)]||'none']++});
+  const checked=list.length-r.none;
+  return{list,r,pct:checked?Math.round((r.present+r.late)*100/checked):null};
+ };
+ const cls=scope.startsWith('c:')?[scope.slice(2)]:classes();
+ let h='<div class="rpt" style="font-family:Prompt,sans-serif;color:#000"><h2 style="text-align:center;margin:0">รายงานการมาเรียน</h2><p style="text-align:center;margin:2px 0 10px">Smart School · วันที่ '+thDate(date)+'</p>';
+ let first=true;
+ if(scope==='all'||scope==='summary'){
+  const t={present:0,absent:0,late:0,leave:0,none:0,total:0};
+  const rows=cls.map(c=>{
+   const s=stat(c);Object.keys(s.r).forEach(k=>t[k]+=s.r[k]);t.total+=s.list.length;
+   return '<tr><td>'+esc(c)+'</td><td class="c">'+s.list.length+'</td><td class="c">'+s.r.present+'</td><td class="c">'+s.r.absent+'</td><td class="c">'+s.r.late+'</td><td class="c">'+s.r.leave+'</td><td class="c">'+s.r.none+'</td><td class="c">'+(s.pct===null?'-':s.pct+'%')+'</td></tr>';
+  }).join('');
+  const chkT=t.total-t.none,pT=chkT?Math.round((t.present+t.late)*100/chkT):null;
+  h+='<h3 style="margin:8px 0 2px">สรุปรายห้องเรียน</h3><table><thead><tr><th>ห้อง</th><th class="c">ทั้งหมด</th><th class="c">มา</th><th class="c">ขาด</th><th class="c">สาย</th><th class="c">ลา</th><th class="c">ยังไม่เช็ค</th><th class="c">% มา</th></tr></thead><tbody>'+rows+'<tr style="font-weight:600"><td>รวม</td><td class="c">'+t.total+'</td><td class="c">'+t.present+'</td><td class="c">'+t.absent+'</td><td class="c">'+t.late+'</td><td class="c">'+t.leave+'</td><td class="c">'+t.none+'</td><td class="c">'+(pT===null?'-':pT+'%')+'</td></tr></tbody></table><p style="font-size:11px;margin:2px 0">% มา คำนวณจาก (มา + สาย) ต่อจำนวนที่เช็คชื่อแล้ว</p>';
+  first=false;
+ }
+ if(scope!=='summary'){
+  cls.forEach(c=>{
+   const s=stat(c);
+   const body=s.list.map((x,i)=>'<tr><td class="c">'+esc(x.number??(i+1))+'</td><td>'+esc(x.studentId)+'</td><td>'+esc(fullName(x))+'</td><td class="c">'+lab(state.att[key(date,c,x.studentId)])+'</td><td></td></tr>').join('');
+   h+='<div style="'+(first?'':'page-break-before:always;')+'"><h3 style="margin:8px 0 2px">ห้อง '+esc(c)+' <span style="font-weight:400;font-size:12px">(มา '+s.r.present+' · ขาด '+s.r.absent+' · สาย '+s.r.late+' · ลา '+s.r.leave+(s.r.none?' · ยังไม่เช็ค '+s.r.none:'')+')</span></h3><table><thead><tr><th class="c" style="width:48px">เลขที่</th><th style="width:90px">รหัส</th><th>ชื่อ-สกุล</th><th class="c" style="width:70px">สถานะ</th><th style="width:120px">หมายเหตุ</th></tr></thead><tbody>'+body+'</tbody></table><p style="margin-top:28px;text-align:right">ลงชื่อ .................................... ครูผู้เช็คชื่อ</p></div>';
+   first=false;
+  });
+ }
+ return h+'</div>';
+}
+async function printReport(presetClass,presetDate){
+ const date=presetDate||$('dashDate').value||today();
+ let scope;
+ if(presetClass){scope='c:'+presetClass}
+ else{
+  const opts={all:'สรุปรายห้อง + รายชื่อทุกห้อง',summary:'สรุปรายห้องเท่านั้น'};
+  classes().forEach(c=>{opts['c:'+c]='รายชื่อห้อง '+c});
+  const r=await Swal.fire({title:'พิมพ์รายงาน',text:'วันที่ '+thDate(date),input:'select',inputOptions:opts,inputValue:'all',showCancelButton:true,confirmButtonText:'พิมพ์',cancelButtonText:'ยกเลิก',confirmButtonColor:'#2563eb'});
+  if(!r.isConfirmed)return;
+  scope=r.value;
+ }
+ if(online){showLoader('กำลังเตรียมรายงาน...');await loadAtt(date);hideLoader()}
+ $('printArea').innerHTML=reportHtml(date,scope);
+ setTimeout(()=>window.print(),250);
+}
+function printClass(){
+ const c=$('attClass').value,d=$('attDate').value||today();
+ if(!c)return toast('warning','ยังไม่มีห้องเรียน');
+ printReport(c,d);
 }
 
 function renderManage(){
