@@ -19,6 +19,7 @@
  .st-btn.active-late{background:#f59e0b;color:#fff;border-color:#f59e0b}
  .st-btn.active-leave{background:#2563eb;color:#fff;border-color:#2563eb}
  .page{display:none}.page.show{display:block}
+ .swal2-input{margin:.25rem 0 .5rem!important;width:100%!important;box-sizing:border-box}
 </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
@@ -81,6 +82,10 @@
           <button onclick="markAll('present')" class="flex-1 py-2 rounded-lg bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100">มาทั้งหมด</button>
           <button onclick="markAll('absent')" class="flex-1 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100">ขาดทั้งหมด</button>
         </div>
+        <div class="sm:col-span-3 relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+          <input id="attSearch" oninput="drawAtt()" placeholder="ค้นหาในห้องนี้ (ชื่อ / รหัส / เลขที่)" class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm">
+        </div>
       </div>
       <div id="attList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
       <div class="sticky bottom-20 md:bottom-4 mt-4">
@@ -123,6 +128,11 @@
             <input id="sClass" placeholder="ห้อง เช่น ม.1/1" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
             <button class="col-span-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><i class="fa-solid fa-plus"></i> เพิ่ม</button>
           </form>
+          <div class="relative mb-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+            <input id="sSearch" oninput="renderManage()" placeholder="ค้นหา ชื่อ / รหัส / ห้อง / เลขที่" class="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm">
+          </div>
+          <p id="sCount" class="text-xs text-slate-400 mb-2"></p>
           <div id="studentList" class="max-h-96 overflow-y-auto divide-y"></div>
         </div>
         <div class="bg-white rounded-2xl shadow-sm p-4">
@@ -192,14 +202,16 @@ const MENUS=[
  {id:'manage',icon:'fa-users-gear',label:'จัดการ',roles:['admin']},
  {id:'settings',icon:'fa-gear',label:'ตั้งค่า',roles:['admin']}
 ];
+const byNum=(a,b)=>String(a.className).localeCompare(String(b.className),'th',{numeric:true})||((a.number??1e9)-(b.number??1e9))||String(a.studentId).localeCompare(String(b.studentId),'th',{numeric:true});
 const conn=LS.get('conn',{url:DEFAULT_URL,key:DEFAULT_KEY});
-const state={role:sessionStorage.getItem('role'),pw:sessionStorage.getItem('pw')||'',students:LS.get('students2',[]),teachers:LS.get('teachers',[]),att:{},draft:{}};
+const state={role:sessionStorage.getItem('role'),pw:sessionStorage.getItem('pw')||'',students:LS.get('students2',[]).sort(byNum),teachers:LS.get('teachers',[]),att:{},draft:{}};
 let sb=null,pie=null,online=false;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
 const key=(d,c,id)=>`${d}|${c}|${id}`;
 const fullName=s=>[(s.prefix||'')+(s.firstName||''),s.lastName||''].filter(Boolean).join(' ');
+const matchStudent=(s,q)=>[fullName(s),s.studentId,s.className,s.number].join(' ').toLowerCase().includes(q);
 const classes=()=>[...new Set(state.students.map(s=>s.className))].sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
 const showLoader=t=>{$('loaderText').textContent=t||'กำลังโหลด...';$('loader').classList.remove('hidden')};
 const hideLoader=()=>$('loader').classList.add('hidden');
@@ -259,8 +271,8 @@ function updateConn(){$('connStatus').innerHTML=online?'<span class="text-green-
 async function loadMaster(manual){
  showLoader('กำลังโหลดข้อมูล...');
  try{
-  const [s,t]=await Promise.all([sb.from('students').select('*').order('className').order('number',{nullsFirst:false}).order('studentId'),sb.from('teachers').select('*').order('name')]);
-  state.students=chk(s);state.teachers=chk(t);
+  const [s,t]=await Promise.all([sb.from('students').select('*'),sb.from('teachers').select('*').order('name')]);
+  state.students=chk(s).sort(byNum);state.teachers=chk(t);
   LS.set('students2',state.students);LS.set('teachers',state.teachers);online=true;
   if(manual)toast('success','รีเฟรชข้อมูลแล้ว');
  }catch(e){online=false;toast('warning','เชื่อมต่อฐานข้อมูลไม่ได้ ใช้ข้อมูลที่แคชไว้')}
@@ -286,10 +298,16 @@ async function renderAttendance(){
  const d=$('attDate').value,c=$('attClass').value;
  if(!d)return;
  if(online){showLoader('กำลังโหลดผลเช็คชื่อ...');await loadAtt(d);hideLoader()}
- const list=state.students.filter(s=>s.className===c);
  state.draft={};
- list.forEach(s=>{state.draft[s.studentId]=state.att[key(d,c,s.studentId)]||'present'});
- if(!list.length){$('attList').innerHTML='<p class="text-slate-400 text-center py-10 col-span-full">ยังไม่มีนักเรียนในห้องนี้ (Admin เพิ่มได้ที่เมนูจัดการ)</p>';return}
+ state.students.filter(s=>s.className===c).forEach(s=>{state.draft[s.studentId]=state.att[key(d,c,s.studentId)]||'present'});
+ drawAtt();
+}
+function drawAtt(){
+ const c=$('attClass').value,q=($('attSearch').value||'').trim().toLowerCase();
+ const all=state.students.filter(s=>s.className===c);
+ const list=q?all.filter(s=>matchStudent(s,q)):all;
+ if(!all.length){$('attList').innerHTML='<p class="text-slate-400 text-center py-10 col-span-full">ยังไม่มีนักเรียนในห้องนี้ (Admin เพิ่มได้ที่เมนูจัดการ)</p>';return}
+ if(!list.length){$('attList').innerHTML='<p class="text-slate-400 text-center py-10 col-span-full">ไม่พบนักเรียนที่ค้นหา</p>';return}
  $('attList').innerHTML=list.map((s,i)=>`
  <div class="bg-white rounded-2xl shadow-sm p-3">
   <div class="flex items-center gap-3 mb-2">
@@ -338,7 +356,10 @@ async function renderDashboard(){
 }
 
 function renderManage(){
- $('studentList').innerHTML=state.students.map(s=>`<div class="flex items-center justify-between py-2 text-sm"><div class="min-w-0"><p class="truncate">${esc(fullName(s))}</p><p class="text-xs text-slate-400">${esc(s.studentId)} · ${esc(s.className)}${s.number!=null?' · เลขที่ '+esc(s.number):''}</p></div><button onclick="delStudent('${esc(s.studentId)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
+ const q=($('sSearch').value||'').trim().toLowerCase();
+ const list=q?state.students.filter(s=>matchStudent(s,q)):state.students;
+ $('sCount').textContent=`แสดง ${list.length} จาก ${state.students.length} คน (เรียงตามห้อง และเลขที่)`;
+ $('studentList').innerHTML=list.map(s=>`<div class="flex items-center justify-between py-2 text-sm"><div class="min-w-0"><p class="truncate">${esc(fullName(s))}</p><p class="text-xs text-slate-400">${esc(s.studentId)} · ${esc(s.className)}${s.number!=null?' · เลขที่ '+esc(s.number):''}</p></div><div class="flex shrink-0"><button onclick="editStudent('${esc(s.studentId)}')" class="text-blue-600 hover:bg-blue-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-pen"></i></button><button onclick="delStudent('${esc(s.studentId)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่พบข้อมูล</p>';
  $('teacherList').innerHTML=state.teachers.map(t=>`<div class="flex items-center justify-between py-2 text-sm"><div><p>${esc(t.name)}</p><p class="text-xs text-slate-400">ที่ปรึกษา ${esc(t.classroom||'-')}</p></div><button onclick="delTeacher('${esc(t.id)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
 }
 const confirmDel=async txt=>(await Swal.fire({icon:'warning',title:'ยืนยันการลบ?',text:txt,showCancelButton:true,confirmButtonColor:'#dc2626',confirmButtonText:'ลบ',cancelButtonText:'ยกเลิก'})).isConfirmed;
@@ -347,6 +368,30 @@ async function addStudent(){
  const args={pw:state.pw,p_student_id:$('sId').value.trim(),p_prefix:$('sPrefix').value.trim(),p_first:$('sFirst').value.trim(),p_last:$('sLast').value.trim(),p_class:$('sClass').value.trim(),p_number:n?parseInt(n,10):null};
  const r=await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_student',args)),'บันทึกนักเรียนแล้ว');
  if(r!==undefined||true){['sId','sNumber','sPrefix','sFirst','sLast'].forEach(i=>$(i).value='');await loadMaster()}
+}
+async function editStudent(id){
+ const s=state.students.find(x=>x.studentId===id);if(!s)return;
+ const r=await Swal.fire({
+  title:'แก้ไขข้อมูลนักเรียน',
+  html:`<div style="text-align:left;font-size:14px">
+   <label>รหัสนักเรียน (แก้ไม่ได้)</label><input class='swal2-input' value='${esc(s.studentId)}' disabled>
+   <label>เลขที่</label><input id='eNumber' type='number' min='1' class='swal2-input' value='${esc(s.number??'')}'>
+   <label>คำนำหน้า</label><input id='ePrefix' class='swal2-input' value='${esc(s.prefix||'')}'>
+   <label>ชื่อ</label><input id='eFirst' class='swal2-input' value='${esc(s.firstName||'')}'>
+   <label>นามสกุล</label><input id='eLast' class='swal2-input' value='${esc(s.lastName||'')}'>
+   <label>ห้อง</label><input id='eClass' class='swal2-input' value='${esc(s.className||'')}'>
+  </div>`,
+  showCancelButton:true,confirmButtonText:'บันทึก',cancelButtonText:'ยกเลิก',confirmButtonColor:'#2563eb',focusConfirm:false,
+  preConfirm:()=>{
+   const first=$('eFirst').value.trim(),cls=$('eClass').value.trim(),n=$('eNumber').value.trim();
+   if(!first||!cls){Swal.showValidationMessage('กรุณากรอกชื่อและห้อง');return false}
+   return{prefix:$('ePrefix').value.trim(),first,last:$('eLast').value.trim(),cls,number:n?parseInt(n,10):null};
+  }
+ });
+ if(!r.isConfirmed)return;
+ const v=r.value;
+ await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_student',{pw:state.pw,p_student_id:id,p_prefix:v.prefix,p_first:v.first,p_last:v.last,p_class:v.cls,p_number:v.number})),'แก้ไขข้อมูลแล้ว');
+ await loadMaster();
 }
 async function addTeacher(){
  const name=$('tName').value.trim(),cls=$('tClass').value.trim();
