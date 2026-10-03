@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart School - ระบบบริหารจัดการการมาเรียน</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>tailwind.config={theme:{extend:{fontFamily:{sans:['Prompt','sans-serif']}}}}</script>
+<style>
+ body{font-family:'Prompt',sans-serif}
+ .st-btn{transition:.15s}
+ .st-btn.active-present{background:#16a34a;color:#fff;border-color:#16a34a}
+ .st-btn.active-absent{background:#dc2626;color:#fff;border-color:#dc2626}
+ .st-btn.active-late{background:#f59e0b;color:#fff;border-color:#f59e0b}
+ .st-btn.active-leave{background:#2563eb;color:#fff;border-color:#2563eb}
+ .page{display:none}.page.show{display:block}
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<div id="loader" class="hidden fixed inset-0 z-[100] bg-white/70 backdrop-blur-sm flex items-center justify-center">
+  <div class="bg-white shadow-xl rounded-2xl px-8 py-6 text-center">
+    <i class="fa-solid fa-circle-notch fa-spin text-3xl text-blue-600"></i>
+    <p id="loaderText" class="mt-3 text-sm text-slate-600">กำลังโหลด...</p>
+  </div>
+</div>
+
+<section id="loginView" class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 via-white to-blue-100">
+  <div class="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
+    <div class="text-center mb-6">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-blue-600 text-white flex items-center justify-center text-3xl shadow-lg shadow-blue-200"><i class="fa-solid fa-school"></i></div>
+      <h1 class="text-2xl font-semibold mt-4">Smart School</h1>
+      <p class="text-slate-500 text-sm">ระบบบริหารจัดการการมาเรียนอัจฉริยะ</p>
+    </div>
+    <div class="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl mb-5">
+      <button id="tabTeacher" onclick="setLoginTab('teacher')" class="py-2 rounded-lg text-sm font-medium bg-white shadow text-blue-600">ครู</button>
+      <button id="tabAdmin" onclick="setLoginTab('admin')" class="py-2 rounded-lg text-sm font-medium text-slate-500">ผู้ดูแลระบบ</button>
+    </div>
+    <div id="teacherForm">
+      <p class="text-sm text-slate-500 mb-4 text-center">ครูเข้าใช้งานได้ทันที ไม่ต้องลงชื่อเข้าใช้<br>เข้าถึงเมนูเช็คชื่อและสถิติ</p>
+      <button onclick="login('teacher')" class="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium transition"><i class="fa-solid fa-right-to-bracket mr-2"></i>เข้าใช้งานในฐานะครู</button>
+    </div>
+    <form id="adminForm" class="hidden" onsubmit="event.preventDefault();login('admin')">
+      <label class="text-sm text-slate-600">รหัสผ่านผู้ดูแลระบบ</label>
+      <div class="relative mt-1 mb-4">
+        <i class="fa-solid fa-lock absolute left-3 top-3.5 text-slate-400"></i>
+        <input id="adminPass" type="password" class="w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="รหัสผ่าน">
+      </div>
+      <button class="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium transition"><i class="fa-solid fa-user-shield mr-2"></i>เข้าสู่ระบบ Admin</button>
+    </form>
+  </div>
+</section>
+
+<div id="appView" class="hidden pb-24 md:pb-0 md:pl-64">
+  <aside class="hidden md:flex fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-slate-200 flex-col p-4">
+    <div class="flex items-center gap-3 mb-8 px-2">
+      <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center"><i class="fa-solid fa-school"></i></div>
+      <div><p class="font-semibold leading-tight">Smart School</p><p id="roleLabel" class="text-xs text-slate-500"></p></div>
+    </div>
+    <nav id="sideNav" class="flex-1 space-y-1"></nav>
+    <button onclick="logout()" class="text-left px-3 py-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"><i class="fa-solid fa-right-from-bracket w-6"></i>ออกจากระบบ</button>
+  </aside>
+
+  <header class="md:hidden sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2"><i class="fa-solid fa-school text-blue-600"></i><span class="font-semibold">Smart School</span></div>
+    <button onclick="logout()" class="text-slate-500"><i class="fa-solid fa-right-from-bracket"></i></button>
+  </header>
+
+  <main class="p-4 md:p-8 max-w-6xl mx-auto">
+    <section id="page-attendance" class="page">
+      <h2 class="text-xl font-semibold mb-4"><i class="fa-solid fa-clipboard-check text-blue-600 mr-2"></i>เช็คชื่อนักเรียน</h2>
+      <div class="bg-white rounded-2xl shadow-sm p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div><label class="text-xs text-slate-500">วันที่</label><input id="attDate" type="date" onchange="renderAttendance()" class="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200"></div>
+        <div><label class="text-xs text-slate-500">ห้องเรียน</label><select id="attClass" onchange="renderAttendance()" class="w-full mt-1 px-3 py-2 rounded-lg border border-slate-200"></select></div>
+        <div class="flex items-end gap-2">
+          <button onclick="markAll('present')" class="flex-1 py-2 rounded-lg bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100">มาทั้งหมด</button>
+          <button onclick="markAll('absent')" class="flex-1 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100">ขาดทั้งหมด</button>
+        </div>
+      </div>
+      <div id="attList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+      <div class="sticky bottom-20 md:bottom-4 mt-4">
+        <button onclick="saveAttendance()" class="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-200"><i class="fa-solid fa-floppy-disk mr-2"></i>บันทึกผลการเช็คชื่อ</button>
+      </div>
+    </section>
+
+    <section id="page-dashboard" class="page">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold"><i class="fa-solid fa-chart-pie text-blue-600 mr-2"></i>สถิติการมาเรียน</h2>
+        <input id="dashDate" type="date" onchange="renderDashboard()" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm">
+      </div>
+      <div id="dashCards" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm p-4">
+          <h3 class="font-medium mb-2">สัดส่วนภาพรวม</h3>
+          <div class="max-w-xs mx-auto"><canvas id="pieChart"></canvas></div>
+        </div>
+        <div class="lg:col-span-3 bg-white rounded-2xl shadow-sm p-4 overflow-x-auto">
+          <h3 class="font-medium mb-2">สรุปรายห้องเรียน</h3>
+          <table class="w-full text-sm">
+            <thead><tr class="text-slate-500 border-b"><th class="text-left py-2">ห้อง</th><th>ทั้งหมด</th><th class="text-green-600">มา</th><th class="text-red-600">ขาด</th><th class="text-amber-500">สาย</th><th class="text-blue-600">ลา</th><th>% มา</th></tr></thead>
+            <tbody id="dashTable" class="text-center"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="page-manage" class="page">
+      <h2 class="text-xl font-semibold mb-4"><i class="fa-solid fa-users-gear text-blue-600 mr-2"></i>จัดการข้อมูล</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+          <h3 class="font-medium mb-3"><i class="fa-solid fa-user-graduate text-blue-600 mr-2"></i>นักเรียน</h3>
+          <form onsubmit="event.preventDefault();addStudent()" class="grid grid-cols-6 gap-2 mb-3">
+            <input id="sId" placeholder="รหัส" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="sName" placeholder="ชื่อ-สกุล" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="sClass" placeholder="ห้อง เช่น ม.1/1" class="col-span-4 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <button class="col-span-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><i class="fa-solid fa-plus"></i> เพิ่ม</button>
+          </form>
+          <div id="studentList" class="max-h-96 overflow-y-auto divide-y"></div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm p-4">
+          <h3 class="font-medium mb-3"><i class="fa-solid fa-chalkboard-user text-blue-600 mr-2"></i>ครู</h3>
+          <form onsubmit="event.preventDefault();addTeacher()" class="grid grid-cols-6 gap-2 mb-3">
+            <input id="tName" placeholder="ชื่อ-สกุล" class="col-span-3 px-3 py-2 rounded-lg border border-slate-200 text-sm" required>
+            <input id="tClass" placeholder="ห้องที่ปรึกษา" class="col-span-2 px-3 py-2 rounded-lg border border-slate-200 text-sm">
+            <button class="bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"><i class="fa-solid fa-plus"></i></button>
+          </form>
+          <div id="teacherList" class="max-h-96 overflow-y-auto divide-y"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <h2 class="text-xl font-semibold mb-4"><i class="fa-solid fa-gear text-blue-600 mr-2"></i>ตั้งค่า</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h3 class="font-medium"><i class="fa-solid fa-database text-blue-600 mr-2"></i>การเชื่อมต่อ Supabase</h3>
+          <p id="connStatus" class="text-sm"></p>
+          <label class="text-xs text-slate-500">Project URL</label>
+          <input id="setSbUrl" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+          <label class="text-xs text-slate-500">Publishable / anon key</label>
+          <input id="setSbKey" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+          <div class="flex gap-2">
+            <button onclick="saveConn()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700">บันทึกและเชื่อมต่อใหม่</button>
+            <button onclick="loadMaster(true)" class="px-4 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200"><i class="fa-solid fa-rotate mr-1"></i>รีเฟรชข้อมูล</button>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h3 class="font-medium"><i class="fa-solid fa-key text-blue-600 mr-2"></i>เปลี่ยนรหัสผ่าน Admin</h3>
+          <input id="newPw" type="password" placeholder="รหัสผ่านใหม่ (อย่างน้อย 6 ตัว)" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+          <button onclick="changePw()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700">เปลี่ยนรหัสผ่าน</button>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h3 class="font-medium"><i class="fa-solid fa-file-import text-blue-600 mr-2"></i>นำเข้านักเรียนจำนวนมาก</h3>
+          <p class="text-xs text-slate-500">วางข้อมูลทีละบรรทัด รูปแบบ: รหัส,ชื่อ-สกุล,ห้อง (คัดลอกจาก Excel/Sheets ได้)</p>
+          <textarea id="csvBox" rows="6" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="1001,เด็กชายสมชาย ใจดี,ม.1/1"></textarea>
+          <button onclick="importCsv()" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700">นำเข้า</button>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h3 class="font-medium"><i class="fa-solid fa-file-csv text-blue-600 mr-2"></i>ส่งออกรายงาน</h3>
+          <p class="text-xs text-slate-500">ดาวน์โหลด CSV ผลเช็คชื่อของวันที่เลือกในหน้าสถิติ</p>
+          <button onclick="exportCsv()" class="px-4 py-2 rounded-lg bg-slate-100 text-sm hover:bg-slate-200"><i class="fa-solid fa-download mr-1"></i>ดาวน์โหลด CSV</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav id="bottomNav" class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex justify-around py-1 shadow-[0_-4px_12px_rgba(0,0,0,.04)]"></nav>
+</div>
+
+<script>
+const DEFAULT_URL='https://uclowwjwhihmephyniaq.supabase.co';
+const DEFAULT_KEY='sb_publishable_wWiGYCd_sJlWwDDoerua9A_wiXlEP6U';
+const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+const STATUS={present:{label:'มา',cls:'active-present',color:'#16a34a'},absent:{label:'ขาด',cls:'active-absent',color:'#dc2626'},late:{label:'สาย',cls:'active-late',color:'#f59e0b'},leave:{label:'ลา',cls:'active-leave',color:'#2563eb'}};
+const MENUS=[
+ {id:'attendance',icon:'fa-clipboard-check',label:'เช็คชื่อ',roles:['admin','teacher']},
+ {id:'dashboard',icon:'fa-chart-pie',label:'สถิติ',roles:['admin','teacher']},
+ {id:'manage',icon:'fa-users-gear',label:'จัดการ',roles:['admin']},
+ {id:'settings',icon:'fa-gear',label:'ตั้งค่า',roles:['admin']}
+];
+const conn=LS.get('conn',{url:DEFAULT_URL,key:DEFAULT_KEY});
+const state={role:sessionStorage.getItem('role'),pw:sessionStorage.getItem('pw')||'',students:LS.get('students',[]),teachers:LS.get('teachers',[]),att:{},draft:{}};
+let sb=null,pie=null,online=false;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,10)};
+const key=(d,c,id)=>`${d}|${c}|${id}`;
+const classes=()=>[...new Set(state.students.map(s=>s.classroom))].sort((a,b)=>a.localeCompare(b,'th',{numeric:true}));
+const showLoader=t=>{$('loaderText').textContent=t||'กำลังโหลด...';$('loader').classList.remove('hidden')};
+const hideLoader=()=>$('loader').classList.add('hidden');
+const toast=(icon,title)=>Swal.fire({toast:true,position:'top',icon,title,showConfirmButton:false,timer:2200});
+const fail=(title,e)=>Swal.fire({icon:'error',title,text:e?.message||String(e||''),confirmButtonColor:'#2563eb'});
+const chk=r=>{if(r.error)throw r.error;return r.data};
+async function run(text,fn,ok){showLoader(text);try{const r=await fn();if(ok)toast('success',ok);return r}catch(e){fail('เกิดข้อผิดพลาด',e)}finally{hideLoader()}}
+
+function initSb(){sb=window.supabase?window.supabase.createClient(conn.url,conn.key):null}
+
+function setLoginTab(t){
+ const te=t==='teacher';
+ $('teacherForm').classList.toggle('hidden',!te);$('adminForm').classList.toggle('hidden',te);
+ $('tabTeacher').className='py-2 rounded-lg text-sm font-medium '+(te?'bg-white shadow text-blue-600':'text-slate-500');
+ $('tabAdmin').className='py-2 rounded-lg text-sm font-medium '+(!te?'bg-white shadow text-blue-600':'text-slate-500');
+}
+async function login(role){
+ if(role==='admin'){
+  const pw=$('adminPass').value;
+  const ok=await run('กำลังตรวจสอบ...',async()=>chk(await sb.rpc('admin_login',{pw})));
+  if(!ok){if(ok===false)fail('รหัสผ่านไม่ถูกต้อง');return}
+  state.pw=pw;sessionStorage.setItem('pw',pw);$('adminPass').value='';
+  if(pw==='admin1234')setTimeout(()=>Swal.fire({icon:'warning',title:'กรุณาเปลี่ยนรหัสผ่านเริ่มต้น',text:'ไปที่ ตั้งค่า → เปลี่ยนรหัสผ่าน Admin',confirmButtonColor:'#2563eb'}),600);
+ }
+ state.role=role;sessionStorage.setItem('role',role);initApp();
+}
+function logout(){state.role=null;state.pw='';sessionStorage.clear();$('appView').classList.add('hidden');$('loginView').classList.remove('hidden')}
+
+async function initApp(){
+ $('loginView').classList.add('hidden');$('appView').classList.remove('hidden');
+ $('roleLabel').textContent=state.role==='admin'?'ผู้ดูแลระบบ':'ครู';
+ const items=MENUS.filter(m=>m.roles.includes(state.role));
+ $('sideNav').innerHTML=items.map(m=>`<button data-nav="${m.id}" onclick="go('${m.id}')" class="w-full text-left px-3 py-2.5 rounded-lg text-slate-600 hover:bg-blue-50"><i class="fa-solid ${m.icon} w-6"></i>${m.label}</button>`).join('');
+ $('bottomNav').innerHTML=items.map(m=>`<button data-nav="${m.id}" onclick="go('${m.id}')" class="flex-1 flex flex-col items-center py-2 text-slate-400"><i class="fa-solid ${m.icon} text-lg"></i><span class="text-[11px] mt-0.5">${m.label}</span></button>`).join('');
+ $('attDate').value=today();$('dashDate').value=today();
+ $('setSbUrl').value=conn.url;$('setSbKey').value=conn.key;
+ await loadMaster();
+ go('attendance');
+}
+function go(id){
+ const m=MENUS.find(x=>x.id===id);if(!m||!m.roles.includes(state.role))return;
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('show'));
+ $('page-'+id).classList.add('show');
+ document.querySelectorAll('[data-nav]').forEach(b=>{
+  const on=b.dataset.nav===id;
+  if(b.parentElement.id==='bottomNav')b.className='flex-1 flex flex-col items-center py-2 '+(on?'text-blue-600':'text-slate-400');
+  else b.className='w-full text-left px-3 py-2.5 rounded-lg '+(on?'bg-blue-50 text-blue-600 font-medium':'text-slate-600 hover:bg-blue-50');
+ });
+ if(id==='attendance')renderAttendance();
+ if(id==='dashboard')renderDashboard();
+ if(id==='manage')renderManage();
+ if(id==='settings')updateConn();
+ window.scrollTo(0,0);
+}
+function updateConn(){$('connStatus').innerHTML=online?'<span class="text-green-600"><i class="fa-solid fa-circle-check"></i> เชื่อมต่อ Supabase สำเร็จ</span>':'<span class="text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> ออฟไลน์ / เชื่อมต่อไม่ได้ (ใช้ข้อมูลที่แคชไว้)</span>'}
+
+async function loadMaster(manual){
+ showLoader('กำลังโหลดข้อมูล...');
+ try{
+  const [s,t]=await Promise.all([sb.from('students').select('*').order('classroom').order('id'),sb.from('teachers').select('*').order('name')]);
+  state.students=chk(s);state.teachers=chk(t);
+  LS.set('students',state.students);LS.set('teachers',state.teachers);online=true;
+  if(manual)toast('success','รีเฟรชข้อมูลแล้ว');
+ }catch(e){online=false;toast('warning','เชื่อมต่อฐานข้อมูลไม่ได้ ใช้ข้อมูลที่แคชไว้')}
+ finally{hideLoader()}
+ refreshClassSelect();updateConn();
+ if($('page-manage').classList.contains('show'))renderManage();
+}
+async function loadAtt(d){
+ try{
+  const rows=chk(await sb.from('attendance').select('*').eq('date',d));
+  Object.keys(state.att).forEach(k=>{if(k.startsWith(d+'|'))delete state.att[k]});
+  rows.forEach(r=>state.att[key(r.date,r.classroom,r.student_id)]=r.status);
+  return rows;
+ }catch(e){toast('warning','โหลดผลเช็คชื่อไม่สำเร็จ');return[]}
+}
+
+function refreshClassSelect(){
+ const cur=$('attClass').value;
+ $('attClass').innerHTML=classes().map(c=>`<option>${esc(c)}</option>`).join('')||'<option value="">- ไม่มีห้อง -</option>';
+ if(cur&&classes().includes(cur))$('attClass').value=cur;
+}
+async function renderAttendance(){
+ const d=$('attDate').value,c=$('attClass').value;
+ if(!d)return;
+ if(online){showLoader('กำลังโหลดผลเช็คชื่อ...');await loadAtt(d);hideLoader()}
+ const list=state.students.filter(s=>s.classroom===c);
+ state.draft={};
+ list.forEach(s=>{state.draft[s.id]=state.att[key(d,c,s.id)]||'present'});
+ if(!list.length){$('attList').innerHTML='<p class="text-slate-400 text-center py-10 col-span-full">ยังไม่มีนักเรียนในห้องนี้ (Admin เพิ่มได้ที่เมนูจัดการ)</p>';return}
+ $('attList').innerHTML=list.map((s,i)=>`
+ <div class="bg-white rounded-2xl shadow-sm p-3">
+  <div class="flex items-center gap-3 mb-2">
+   <div class="w-9 h-9 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-medium">${i+1}</div>
+   <div class="min-w-0"><p class="font-medium truncate">${esc(s.name)}</p><p class="text-xs text-slate-400">รหัส ${esc(s.id)}</p></div>
+  </div>
+  <div class="grid grid-cols-4 gap-2" data-sid="${esc(s.id)}">
+   ${Object.entries(STATUS).map(([k,v])=>`<button onclick="setStatus('${esc(s.id)}','${k}')" data-k="${k}" class="st-btn py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600">${v.label}</button>`).join('')}
+  </div>
+ </div>`).join('');
+ list.forEach(s=>paintStatus(s.id));
+}
+function paintStatus(id){
+ const box=document.querySelector(`[data-sid="${CSS.escape(id)}"]`);if(!box)return;
+ box.querySelectorAll('button').forEach(b=>{
+  Object.values(STATUS).forEach(v=>b.classList.remove(v.cls));
+  if(b.dataset.k===state.draft[id])b.classList.add(STATUS[b.dataset.k].cls);
+ });
+}
+function setStatus(id,k){state.draft[id]=k;paintStatus(id)}
+function markAll(k){Object.keys(state.draft).forEach(id=>{state.draft[id]=k;paintStatus(id)})}
+async function saveAttendance(){
+ const d=$('attDate').value,c=$('attClass').value,ids=Object.keys(state.draft);
+ if(!ids.length)return toast('warning','ไม่มีรายชื่อให้บันทึก');
+ const rows=ids.map(id=>({date:d,classroom:c,student_id:id,name:(state.students.find(s=>s.id===id)||{}).name,status:state.draft[id]}));
+ const r=await run('กำลังบันทึกไปยัง Supabase...',async()=>chk(await sb.from('attendance').upsert(rows,{onConflict:'date,classroom,student_id'})),'บันทึกเรียบร้อย');
+ if(r!==undefined||online)ids.forEach(id=>state.att[key(d,c,id)]=state.draft[id]);
+}
+
+async function renderDashboard(){
+ const d=$('dashDate').value;if(!d)return;
+ if(online){showLoader('กำลังโหลดสถิติ...');await loadAtt(d);hideLoader()}
+ const tot={present:0,absent:0,late:0,leave:0,none:0};
+ const rows=classes().map(c=>{
+  const list=state.students.filter(s=>s.classroom===c);
+  const r={present:0,absent:0,late:0,leave:0,none:0};
+  list.forEach(s=>{r[state.att[key(d,c,s.id)]||'none']++});
+  Object.keys(r).forEach(k=>tot[k]+=r[k]);
+  const checked=list.length-r.none,pct=checked?Math.round((r.present+r.late)*100/checked):0;
+  return `<tr class="border-b last:border-0"><td class="text-left py-2 font-medium">${esc(c)}</td><td>${list.length}</td><td>${r.present}</td><td>${r.absent}</td><td>${r.late}</td><td>${r.leave}</td><td><span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">${checked?pct+'%':'-'}</span></td></tr>`;
+ });
+ $('dashTable').innerHTML=rows.join('')||'<tr><td colspan="7" class="py-6 text-slate-400">ไม่มีข้อมูล</td></tr>';
+ $('dashCards').innerHTML=Object.entries(STATUS).map(([k,v])=>`<div class="bg-white rounded-2xl shadow-sm p-4"><p class="text-xs text-slate-500">${v.label}</p><p class="text-3xl font-semibold" style="color:${v.color}">${tot[k]}</p></div>`).join('');
+ if(pie)pie.destroy();
+ pie=new Chart($('pieChart'),{type:'doughnut',data:{labels:Object.values(STATUS).map(v=>v.label),datasets:[{data:[tot.present,tot.absent,tot.late,tot.leave],backgroundColor:Object.values(STATUS).map(v=>v.color),borderWidth:2}]},options:{plugins:{legend:{position:'bottom'}},cutout:'60%'}});
+}
+
+function renderManage(){
+ $('studentList').innerHTML=state.students.map(s=>`<div class="flex items-center justify-between py-2 text-sm"><div class="min-w-0"><p class="truncate">${esc(s.name)}</p><p class="text-xs text-slate-400">${esc(s.id)} · ${esc(s.classroom)}</p></div><button onclick="delStudent('${esc(s.id)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
+ $('teacherList').innerHTML=state.teachers.map(t=>`<div class="flex items-center justify-between py-2 text-sm"><div><p>${esc(t.name)}</p><p class="text-xs text-slate-400">ที่ปรึกษา ${esc(t.classroom||'-')}</p></div><button onclick="delTeacher('${esc(t.id)}')" class="text-red-500 hover:bg-red-50 w-8 h-8 rounded-lg"><i class="fa-solid fa-trash"></i></button></div>`).join('')||'<p class="text-slate-400 text-sm py-4 text-center">ไม่มีข้อมูล</p>';
+}
+const confirmDel=async txt=>(await Swal.fire({icon:'warning',title:'ยืนยันการลบ?',text:txt,showCancelButton:true,confirmButtonColor:'#dc2626',confirmButtonText:'ลบ',cancelButtonText:'ยกเลิก'})).isConfirmed;
+async function addStudent(){
+ const id=$('sId').value.trim(),name=$('sName').value.trim(),classroom=$('sClass').value.trim();
+ const r=await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_student',{pw:state.pw,p_id:id,p_name:name,p_classroom:classroom})),'เพิ่มนักเรียนแล้ว');
+ if(r!==undefined||true){['sId','sName'].forEach(i=>$(i).value='');await loadMaster()}
+}
+async function addTeacher(){
+ const name=$('tName').value.trim(),cls=$('tClass').value.trim();
+ await run('กำลังบันทึก...',async()=>chk(await sb.rpc('admin_save_teacher',{pw:state.pw,p_id:'t'+Date.now(),p_name:name,p_classroom:cls})),'เพิ่มครูแล้ว');
+ $('tName').value='';$('tClass').value='';await loadMaster();
+}
+async function delStudent(id){
+ const s=state.students.find(x=>x.id===id);if(!s||!await confirmDel(s.name+' (และประวัติเช็คชื่อ)'))return;
+ await run('กำลังลบ...',async()=>chk(await sb.rpc('admin_delete_student',{pw:state.pw,p_id:id})),'ลบแล้ว');await loadMaster();
+}
+async function delTeacher(id){
+ const t=state.teachers.find(x=>x.id===id);if(!t||!await confirmDel(t.name))return;
+ await run('กำลังลบ...',async()=>chk(await sb.rpc('admin_delete_teacher',{pw:state.pw,p_id:id})),'ลบแล้ว');await loadMaster();
+}
+
+function saveConn(){
+ conn.url=$('setSbUrl').value.trim()||DEFAULT_URL;conn.key=$('setSbKey').value.trim()||DEFAULT_KEY;
+ LS.set('conn',conn);initSb();loadMaster(true);
+}
+async function changePw(){
+ const n=$('newPw').value;
+ if(n.length<6)return fail('รหัสผ่านสั้นเกินไป','ต้องมีอย่างน้อย 6 ตัวอักษร');
+ const r=await run('กำลังเปลี่ยนรหัสผ่าน...',async()=>chk(await sb.rpc('admin_change_password',{pw:state.pw,new_pw:n})),'เปลี่ยนรหัสผ่านแล้ว');
+ if(r!==undefined||true){state.pw=n;sessionStorage.setItem('pw',n);$('newPw').value=''}
+}
+async function importCsv(){
+ const rows=$('csvBox').value.split(/\r?\n/).map(l=>l.split(/[,\t]/).map(x=>x.trim())).filter(a=>a.length>=3&&a[0]&&a[1]&&a[2]&&!['id','รหัส'].includes(a[0].toLowerCase())).map(a=>({id:a[0],name:a[1],classroom:a[2]}));
+ if(!rows.length)return fail('ไม่พบข้อมูลที่นำเข้าได้','รูปแบบ: รหัส,ชื่อ-สกุล,ห้อง');
+ const n=await run(`กำลังนำเข้า ${rows.length} รายการ...`,async()=>chk(await sb.rpc('admin_import_students',{pw:state.pw,rows})),`นำเข้าแล้ว ${rows.length} รายการ`);
+ if(n!==undefined){$('csvBox').value='';await loadMaster()}
+}
+async function exportCsv(){
+ const d=$('dashDate').value||today();
+ const rows=await run('กำลังเตรียมไฟล์...',async()=>chk(await sb.from('attendance').select('*').eq('date',d).order('classroom')));
+ if(!rows)return;
+ const map={present:'มา',absent:'ขาด',late:'สาย',leave:'ลา'};
+ const csv='\ufeffวันที่,ห้อง,รหัส,ชื่อ,สถานะ\n'+rows.map(r=>[r.date,r.classroom,r.student_id,r.name,map[r.status]].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`attendance_${d}.csv`;a.click();
+}
+
+initSb();
+if(state.role==='admin'&&!state.pw)logout();
+else if(state.role)initApp();
+</script>
+</body>
+</html>
