@@ -20,7 +20,14 @@
  .st-btn.active-leave{background:#2563eb;color:#fff;border-color:#2563eb}
  .page{display:none}.page.show{display:block}
  .swal2-input{margin:.25rem 0 .5rem!important;width:100%!important;box-sizing:border-box}
+ #printPreview{display:none}
+ #printPreview.open{display:block;position:fixed;inset:0;z-index:10000;background:#e2e8f0;overflow:auto}
+ #printToolbar{position:sticky;top:0;display:flex;justify-content:flex-end;gap:12px;padding:12px;background:#fff;border-bottom:1px solid #cbd5e1}
+ #printToolbar button{padding:10px 18px;border:1px solid #94a3b8;border-radius:8px;background:white;cursor:pointer}
+ #printToolbar .print-confirm{background:#2563eb;color:white}
  #printArea{display:none}
+ #printPreview.open #printArea{display:block;max-width:210mm;margin:20px auto;padding:14mm;background:white;box-sizing:border-box}
+ body.print-preview-open{overflow:hidden}
  .rpt table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
  .rpt th,.rpt td{border:1px solid #666;padding:4px 6px}
  .rpt th{background:#eee}
@@ -35,7 +42,10 @@
  .rpt td{overflow-wrap:anywhere}
  @media print{
   #appView,#loginView,#loader,.swal2-container{display:none!important}
-  #printArea{display:block!important}
+  #printPreview,#printPreview.open{display:block!important;position:static!important;overflow:visible!important;background:#fff!important}
+  #printToolbar{display:none!important}
+  #printPreview #printArea{display:block!important;max-width:none!important;margin:0!important;padding:0!important}
+  body.print-preview-open{overflow:visible!important}
   html,body{background:#fff!important;margin:0!important;min-height:0!important}
   .rpt th{print-color-adjust:exact;-webkit-print-color-adjust:exact}
   @page{size:A4;margin:14mm}
@@ -215,7 +225,10 @@
   <nav id="bottomNav" class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex justify-around py-1 shadow-[0_-4px_12px_rgba(0,0,0,.04)]"></nav>
 </div>
 
-<div id="printArea"></div>
+<section id="printPreview" role="dialog" aria-modal="true" aria-label="ตัวอย่างรายงานก่อนพิมพ์">
+ <div id="printToolbar"><button type="button" onclick="closePrintPreview()">ปิดรายงาน</button><button type="button" class="print-confirm" onclick="window.print()">พิมพ์ / บันทึก PDF</button></div>
+ <div id="printArea"></div>
+</section>
 
 <script>
 const DEFAULT_URL='https://uclowwjwhihmephyniaq.supabase.co';
@@ -448,12 +461,18 @@ async function printReport(presetClass,presetDate){
    if(!r.isConfirmed)return;
   }
   $('printArea').innerHTML=reportHtml(date,scope);
-  // Let Thai fonts and the report layout finish before opening print preview.
-  if(document.fonts)await document.fonts.ready;
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  window.print();
+  // Show the report immediately. The final print button calls print directly
+  // from a user click, without database/font waits losing user activation.
+  $('printPreview').classList.add('open');
+  document.body.classList.add('print-preview-open');
+  $('printPreview').scrollTop=0;
+  $('printToolbar').querySelector('.print-confirm').focus();
  }catch(e){fail('ไม่สามารถเตรียมรายงานได้',e)}
  finally{printBusy=false;hideLoader()}
+}
+function closePrintPreview(){
+ $('printPreview').classList.remove('open');
+ document.body.classList.remove('print-preview-open');
 }
 function printClass(){
  const c=$('attClass').value,d=$('attDate').value||today();
