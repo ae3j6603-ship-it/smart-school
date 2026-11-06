@@ -43,7 +43,7 @@
  @media print{
   #appView,#loginView,#loader,.swal2-container{display:none!important}
   #printPreview,#printPreview.open{display:block!important;position:static!important;overflow:visible!important;background:#fff!important}
-  #printToolbar{display:none!important}
+  #printToolbar,#printHelp{display:none!important}
   #printPreview #printArea{display:block!important;max-width:none!important;margin:0!important;padding:0!important}
   body.print-preview-open{overflow:visible!important}
   html,body{background:#fff!important;margin:0!important;min-height:0!important}
@@ -226,7 +226,8 @@
 </div>
 
 <section id="printPreview" role="dialog" aria-modal="true" aria-label="ตัวอย่างรายงานก่อนพิมพ์">
- <div id="printToolbar"><button type="button" onclick="closePrintPreview()">ปิดรายงาน</button><button type="button" class="print-confirm" onclick="window.print()">พิมพ์ / บันทึก PDF</button></div>
+ <div id="printToolbar"><button type="button" onclick="closePrintPreview()">ปิดรายงาน</button><button type="button" class="print-confirm" onclick="printPreparedReport()">พิมพ์ / บันทึก PDF</button></div>
+ <p id="printHelp" style="text-align:center;padding:8px">เลือกเครื่องพิมพ์ในหน้าต่างพิมพ์ของเบราว์เซอร์ หากหน้าต่างไม่เปิด ให้ <a id="standaloneReport" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline">เปิดรายงานในแท็บใหม่</a> แล้วกด Ctrl + P</p>
  <div id="printArea"></div>
 </section>
 
@@ -461,6 +462,7 @@ async function printReport(presetClass,presetDate){
    if(!r.isConfirmed)return;
   }
   $('printArea').innerHTML=reportHtml(date,scope);
+  prepareStandaloneReport(date);
   // Show the report immediately. The final print button calls print directly
   // from a user click, without database/font waits losing user activation.
   $('printPreview').classList.add('open');
@@ -469,6 +471,27 @@ async function printReport(presetClass,presetDate){
   $('printToolbar').querySelector('.print-confirm').focus();
  }catch(e){fail('ไม่สามารถเตรียมรายงานได้',e)}
  finally{printBusy=false;hideLoader()}
+}
+let standaloneReportUrl=null;
+function prepareStandaloneReport(date){
+ const css=document.querySelector('style').textContent;
+ const report=$('printArea').innerHTML;
+ // An independent document avoids the host page's fixed overlays and print CSS.
+ const html='<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>รายงานการมาเรียน '+esc(date)+'</title><style>'+css+
+  'body{margin:0;background:white;font-family:Tahoma,sans-serif}main{max-width:210mm;margin:auto;padding:14mm;box-sizing:border-box}.report-actions{padding:12px;text-align:center;background:#eff6ff}.report-actions button{padding:10px 24px;cursor:pointer}@media print{.report-actions{display:none!important}main{max-width:none;margin:0;padding:0}}'+
+  '</style></head><body><div class="report-actions"><button type="button" onclick="window.focus();window.print()">พิมพ์ / บันทึก PDF</button><p>หรือกด Ctrl + P (Mac: Command + P) แล้วเลือกเครื่องพิมพ์หรือ Save as PDF</p></div><main>'+report+'</main></body></html>';
+ if(standaloneReportUrl)URL.revokeObjectURL(standaloneReportUrl);
+ standaloneReportUrl=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
+ $('standaloneReport').href=standaloneReportUrl;
+}
+function printPreparedReport(){
+ // A sandboxed preview may silently ignore print(); offer the full website.
+ if(window.self!==window.top){
+  Swal.fire({icon:'info',title:'เปิดเว็บโดยตรงเพื่อพิมพ์',text:'หน้าพรีวิวอาจไม่อนุญาตให้เปิดหน้าต่างเครื่องพิมพ์ กรุณาเปิดเว็บ Smart School ในแท็บใหม่ แล้วพิมพ์อีกครั้ง',footer:'<a href="https://ae3j6603-ship-it.github.io/smart-school/" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:underline">เปิดเว็บ Smart School</a>'});
+  return;
+ }
+ try{window.focus();window.print()}
+ catch(e){fail('เปิดหน้าต่างพิมพ์ไม่สำเร็จ กรุณาเปิดรายงานในแท็บใหม่หรือกด Ctrl + P',e)}
 }
 function closePrintPreview(){
  $('printPreview').classList.remove('open');
