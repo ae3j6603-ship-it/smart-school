@@ -25,10 +25,19 @@
  .rpt th,.rpt td{border:1px solid #666;padding:4px 6px}
  .rpt th{background:#eee}
  .rpt .c{text-align:center}
+ .rpt{font-size:12px;line-height:1.5}
+ .rpt thead{display:table-header-group}
+ .rpt tr{break-inside:avoid;page-break-inside:avoid}
+ .rpt h2,.rpt h3{break-after:avoid;page-break-after:avoid}
+ .rpt .report-class{break-before:page;page-break-before:always}
+ .rpt .report-class:first-child{break-before:auto;page-break-before:auto}
+ .rpt .report-signature{break-inside:avoid;page-break-inside:avoid}
+ .rpt td{overflow-wrap:anywhere}
  @media print{
   #appView,#loginView,#loader,.swal2-container{display:none!important}
   #printArea{display:block!important}
-  body{background:#fff!important}
+  html,body{background:#fff!important;margin:0!important;min-height:0!important}
+  .rpt th{print-color-adjust:exact;-webkit-print-color-adjust:exact}
   @page{size:A4;margin:14mm}
  }
 </style>
@@ -298,13 +307,19 @@ async function loadMaster(manual){
  refreshClassSelect();updateConn();
  if($('page-manage').classList.contains('show'))renderManage();
 }
-async function loadAtt(d){
+async function loadAtt(d,{strict=false}={}){
  try{
-  const rows=chk(await sb.from('attendance').select('*').eq('date',d));
+  const rows=[];
+  // Fetch every record: Supabase caps the number of rows in a single response.
+  for(let offset=0;;offset+=500){
+   const page=chk(await sb.from('attendance').select('*').eq('date',d).order('classroom').order('student_id').range(offset,offset+499));
+   rows.push(...page);
+   if(page.length<500)break;
+  }
   Object.keys(state.att).forEach(k=>{if(k.startsWith(d+'|'))delete state.att[k]});
   rows.forEach(r=>state.att[key(r.date,r.classroom,r.student_id)]=r.status);
   return rows;
- }catch(e){toast('warning','โหลดผลเช็คชื่อไม่สำเร็จ');return[]}
+ }catch(e){if(strict)throw e;toast('warning','โหลดผลเช็คชื่อไม่สำเร็จ');return[]}
 }
 
 function refreshClassSelect(){
@@ -374,7 +389,7 @@ async function renderDashboard(){
 }
 
 function reportHtml(date,scope){
- const lab=k=>STATUS[k]?STATUS[k].label:'-';
+ const lab=k=>STATUS[k]?STATUS[k].label:'ยังไม่เช็ค';
  const stat=c=>{
   const list=state.students.filter(s=>s.className===c);
   const r={present:0,absent:0,late:0,leave:0,none:0};
@@ -399,31 +414,51 @@ function reportHtml(date,scope){
   cls.forEach(c=>{
    const s=stat(c);
    const body=s.list.map((x,i)=>'<tr><td class="c">'+esc(x.number??(i+1))+'</td><td>'+esc(x.studentId)+'</td><td>'+esc(fullName(x))+'</td><td class="c">'+lab(state.att[key(date,c,x.studentId)])+'</td><td></td></tr>').join('');
-   h+='<div style="'+(first?'':'page-break-before:always;')+'"><h3 style="margin:8px 0 2px">ห้อง '+esc(c)+' <span style="font-weight:400;font-size:12px">(มา '+s.r.present+' · ขาด '+s.r.absent+' · สาย '+s.r.late+' · ลา '+s.r.leave+(s.r.none?' · ยังไม่เช็ค '+s.r.none:'')+')</span></h3><table><thead><tr><th class="c" style="width:48px">เลขที่</th><th style="width:90px">รหัส</th><th>ชื่อ-สกุล</th><th class="c" style="width:70px">สถานะ</th><th style="width:120px">หมายเหตุ</th></tr></thead><tbody>'+body+'</tbody></table><p style="margin-top:28px;text-align:right">ลงชื่อ .................................... ครูผู้เช็คชื่อ</p></div>';
+   h+='<section class="'+(first?'':'report-class')+'"><p style="text-align:center">รายงานการมาเรียน · วันที่ '+esc(thDate(date))+'</p><h3 style="margin:8px 0 2px">ห้อง '+esc(c)+' <span style="font-weight:400;font-size:12px">(มา '+s.r.present+' · ขาด '+s.r.absent+' · สาย '+s.r.late+' · ลา '+s.r.leave+(s.r.none?' · ยังไม่เช็ค '+s.r.none:'')+')</span></h3><table><thead><tr><th class="c" style="width:48px">เลขที่</th><th style="width:90px">รหัส</th><th>ชื่อ-สกุล</th><th class="c" style="width:70px">สถานะ</th><th style="width:120px">หมายเหตุ</th></tr></thead><tbody>'+body+'</tbody></table><p class="report-signature" style="margin-top:28px;text-align:right">ลงชื่อ .................................... ครูผู้เช็คชื่อ</p></section>';
    first=false;
   });
  }
  return h+'</div>';
 }
+let printBusy=false;
 async function printReport(presetClass,presetDate){
- const date=presetDate||$('dashDate').value||today();
- let scope;
- if(presetClass){scope='c:'+presetClass}
- else{
-  const opts={all:'สรุปรายห้อง + รายชื่อทุกห้อง',summary:'สรุปรายห้องเท่านั้น'};
-  classes().forEach(c=>{opts['c:'+c]='รายชื่อห้อง '+c});
-  const r=await Swal.fire({title:'พิมพ์รายงาน',text:'วันที่ '+thDate(date),input:'select',inputOptions:opts,inputValue:'all',showCancelButton:true,confirmButtonText:'พิมพ์',cancelButtonText:'ยกเลิก',confirmButtonColor:'#2563eb'});
-  if(!r.isConfirmed)return;
-  scope=r.value;
- }
- if(online){showLoader('กำลังเตรียมรายงาน...');await loadAtt(date);hideLoader()}
- $('printArea').innerHTML=reportHtml(date,scope);
- setTimeout(()=>window.print(),250);
+ if(printBusy)return;
+ printBusy=true;
+ try{
+  const date=presetDate||$('dashDate').value||today();
+  if(!state.students.length)return toast('warning','ยังไม่มีรายชื่อนักเรียนสำหรับพิมพ์');
+  let scope;
+  if(presetClass){scope='c:'+presetClass}
+  else{
+   const opts={all:'สรุปรายห้อง + รายชื่อทุกห้อง',summary:'สรุปรายห้องเท่านั้น'};
+   classes().forEach(c=>{opts['c:'+c]='รายชื่อห้อง '+c});
+   const r=await Swal.fire({title:'พิมพ์รายงาน',text:'วันที่ '+thDate(date),input:'select',inputOptions:opts,inputValue:'all',showCancelButton:true,confirmButtonText:'พิมพ์',cancelButtonText:'ยกเลิก',confirmButtonColor:'#2563eb'});
+   if(!r.isConfirmed)return;
+   scope=r.value;
+  }
+  if(!online)throw new Error('กรุณาเชื่อมต่อฐานข้อมูลและรีเฟรชข้อมูลก่อนพิมพ์ เพื่อให้รายงานใช้ผลเช็คชื่อที่บันทึกล่าสุด');
+  showLoader('กำลังเตรียมรายงาน...');
+  try{await loadAtt(date,{strict:true})}finally{hideLoader()}
+  const currentClass=$('attClass').value;
+  const hasDraft=date===$('attDate').value&&(scope==='all'||scope==='summary'||scope==='c:'+currentClass)&&
+   state.students.filter(s=>s.className===currentClass).some(s=>
+    Object.hasOwn(state.draft,s.studentId)&&state.draft[s.studentId]!==state.att[key(date,currentClass,s.studentId)]);
+  if(hasDraft){
+   const r=await Swal.fire({icon:'warning',title:'มีผลเช็คชื่อที่ยังไม่ได้บันทึก',text:'รายงานใช้เฉพาะผลที่บันทึกแล้ว หากต้องการพิมพ์ค่าที่เพิ่งเลือก กรุณายกเลิกแล้วบันทึกผลเช็คชื่อก่อน',showCancelButton:true,confirmButtonText:'พิมพ์ผลที่บันทึกแล้ว',cancelButtonText:'กลับไปบันทึก'});
+   if(!r.isConfirmed)return;
+  }
+  $('printArea').innerHTML=reportHtml(date,scope);
+  // Let Thai fonts and the report layout finish before opening print preview.
+  if(document.fonts)await document.fonts.ready;
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  window.print();
+ }catch(e){fail('ไม่สามารถเตรียมรายงานได้',e)}
+ finally{printBusy=false;hideLoader()}
 }
 function printClass(){
  const c=$('attClass').value,d=$('attDate').value||today();
  if(!c)return toast('warning','ยังไม่มีห้องเรียน');
- printReport(c,d);
+ return printReport(c,d);
 }
 
 function renderManage(){
@@ -546,3 +581,4 @@ else if(state.role)initApp();
 </script>
 </body>
 </html>
+
